@@ -17,6 +17,14 @@ No login — meant to run on your own LAN (or reached over a VPN back into it).
 > **AI-assisted.** This project was built with AI assistance. Review the code
 > before relying on it.
 
+## Screenshots
+
+| Routines | Workout logging |
+|:---:|:---:|
+| ![Routines list](docs/screenshots/routines.jpg) | ![Logging a workout](docs/screenshots/workout-logging.jpg) |
+| **History** | **Progress** |
+| ![Session history](docs/screenshots/history.jpg) | ![Per-exercise progression chart](docs/screenshots/progress.jpg) |
+
 ## Stack
 
 - **Backend:** Node.js, [Express 5](https://expressjs.com/), [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
