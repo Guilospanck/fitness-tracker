@@ -1,0 +1,21 @@
+{
+  "name": "fitness-tracker",
+  "version": "1.0.0",
+  "description": "Self-hosted personal workout/routine tracker (Hevy-like). Mobile-first PWA + Node/Express + SQLite, with daily S3 JSON backups.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "backup": "node backup.js",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "better-sqlite3": "^12.8.0",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1"
+  }
+}

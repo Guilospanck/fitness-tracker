@@ -1,0 +1,18 @@
+[Unit]
+Description=Fitness Tracker
+After=network.target
+
+[Service]
+Type=simple
+# Replace `youruser` (both lines) with the Linux account that owns the app.
+User=youruser
+WorkingDirectory=/home/youruser/fitness-tracker
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+# Own port so it doesn't collide with money-tracker (3000) on the same box.
+Environment=PORT=3001
+
+[Install]
+WantedBy=multi-user.target

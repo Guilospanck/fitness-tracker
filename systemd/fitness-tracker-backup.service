@@ -1,0 +1,11 @@
+[Unit]
+Description=Fitness Tracker daily S3 backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Replace `youruser` (both lines) with the Linux account that owns the app.
+User=youruser
+WorkingDirectory=/home/youruser/fitness-tracker
+ExecStart=/usr/bin/node backup.js

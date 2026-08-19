@@ -1,0 +1,17 @@
+node_modules/
+data.sqlite
+data.sqlite-shm
+data.sqlite-wal
+data.sqlite.bak
+.env
+
+# OpenTofu / Terraform
+tofu/.terraform/
+tofu/.terraform.lock.hcl
+tofu/*.tfstate
+tofu/*.tfstate.*
+tofu/terraform.tfvars
+
+# misc
+.DS_Store
+*.log
