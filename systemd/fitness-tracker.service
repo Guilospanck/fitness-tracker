@@ -4,9 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-# Replace `youruser` (both lines) with the Linux account that owns the app.
-User=youruser
-WorkingDirectory=/home/youruser/fitness-tracker
+# __USER__ / __HOME__ are substituted by `just systemd-install` from the
+# account that runs it ($USER / $HOME). Don't hardcode a name here.
+User=__USER__
+WorkingDirectory=__HOME__/fitness-tracker
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=5

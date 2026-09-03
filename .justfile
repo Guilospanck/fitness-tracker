@@ -73,10 +73,19 @@ deploy dest='fitness-tracker:~/fitness-tracker/':
         --exclude='tofu/terraform.tfvars' \
         ./ '{{dest}}'
 
-# (Run on the Linux server) Copy unit files into /etc/systemd/system/ and reload.
+# (Run on the Linux server) Install unit files into /etc/systemd/system/ and reload.
+# __USER__ / __HOME__ in the .service files are substituted from the account that
+# runs this recipe, so no username is committed to the repo.
 systemd-install:
-    sudo cp systemd/fitness-tracker.service systemd/fitness-tracker-backup.service systemd/fitness-tracker-backup.timer /etc/systemd/system/
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for svc in fitness-tracker.service fitness-tracker-backup.service; do
+      sed -e "s|__USER__|$(id -un)|g" -e "s|__HOME__|$HOME|g" "systemd/$svc" \
+        | sudo tee "/etc/systemd/system/$svc" >/dev/null
+    done
+    sudo cp systemd/fitness-tracker-backup.timer /etc/systemd/system/
     sudo systemctl daemon-reload
+    echo ">> Installed units for user $(id -un) (home $HOME)"
 
 # (Run on the Linux server) Enable + start the app service and the backup timer.
 systemd-enable:
@@ -92,3 +101,51 @@ systemd-restart:
 systemd-status:
     systemctl status fitness-tracker.service --no-pager
     systemctl status fitness-tracker-backup.timer --no-pager
+
+# (Run on the Linux server) ONE-SHOT full setup: deps + native build + units +
+# enable + a test backup. Run after `just deploy` from your dev machine.
+# Requires a filled `.env` already on the server (scp it first).
+server-setup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+
+    # 1. .env must exist and be non-empty (the daily backup dies without it).
+    if [ ! -s .env ]; then
+      echo "ERROR: .env is missing or empty at $(pwd)/.env" >&2
+      echo "       Copy it from your dev machine first:" >&2
+      echo "         scp .env <user>@<server>:$(pwd)/.env" >&2
+      exit 1
+    fi
+    chmod 600 .env
+    echo ">> .env present ($(grep -c '=' .env) keys)"
+
+    # 2. Install deps.
+    echo ">> npm install"
+    npm install
+
+    # 3. Ensure the better-sqlite3 native binary exists for THIS Node ABI.
+    #    `npm install` can skip/no-op the build; force a source build if so.
+    if ! find node_modules/better-sqlite3 -name '*.node' | grep -q .; then
+      echo ">> better-sqlite3 binary missing -> building from source"
+      ( cd node_modules/better-sqlite3 && npm run build-release )
+    fi
+    echo ">> better-sqlite3 binary: $(find node_modules/better-sqlite3 -name '*.node' | head -1)"
+
+    # 4. Install systemd units (substitutes __USER__/__HOME__) + reload.
+    just systemd-install
+
+    # 5. Enable + start the app and the daily backup timer.
+    echo ">> enabling app + backup timer"
+    sudo systemctl enable --now fitness-tracker.service
+    sudo systemctl enable --now fitness-tracker-backup.timer
+
+    # 6. Run one backup now to prove creds + region + upload work.
+    echo ">> test backup run"
+    sudo systemctl start fitness-tracker-backup.service
+    journalctl -u fitness-tracker-backup.service -n 15 --no-pager
+
+    echo ""
+    echo ">> DONE."
+    echo "   App:     systemctl status fitness-tracker.service"
+    echo "   Backups: systemctl list-timers fitness-tracker-backup.timer"

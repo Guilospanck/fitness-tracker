@@ -46,16 +46,47 @@ npm install
 The SQLite database (`data.sqlite`) is created automatically on first run and is
 gitignored.
 
-**If you have `ignore-scripts=true` in your npm config** (a common hardening
-default), `better-sqlite3`'s prebuild step is skipped and you'll hit
+`better-sqlite3` is a **native addon** — its compiled binary
+(`better_sqlite3.node`) is tied to both the platform *and* the Node.js ABI
+version. Two things break it:
+
+**1. `ignore-scripts=true` in your npm config** (a common hardening default)
+skips the prebuild step, so no binary is ever fetched. You'll hit
 `Could not locate the bindings file`. Run once:
 
 ```bash
 npm rebuild better-sqlite3 --ignore-scripts=false
 ```
 
-`better-sqlite3` is a native addon — if you develop on a Mac and run on a Raspberry
-Pi, don't copy `node_modules`; run `npm install` on the Pi.
+**2. Upgrading Node.js after install.** The old binary is built for the old ABI
+(e.g. Node 22 → `node-v127`), so after moving to Node 24 (`node-v137`) you get
+the same `Could not locate the bindings file` error — the loader lists a
+`node-v137-...` path it can't find. **`npm rebuild better-sqlite3` may report
+"rebuilt dependencies successfully" while compiling nothing** (no
+`node_modules/better-sqlite3/build/` appears). When that happens, force a clean
+source build:
+
+```bash
+rm -rf node_modules/better-sqlite3
+npm install
+# if no node_modules/better-sqlite3/build/Release/better_sqlite3.node appears:
+( cd node_modules/better-sqlite3 && npm run build-release )
+```
+
+Confirm the binary exists before running anything that touches the DB:
+
+```bash
+find node_modules/better-sqlite3 -name '*.node'
+```
+
+Because the binary is platform- and ABI-specific, **don't copy `node_modules`
+between machines** (e.g. Mac dev host → Raspberry Pi / Linux server). Run
+`npm install` (and, if needed, the source build above) on each box. This is why
+`just deploy` excludes `node_modules/`.
+
+> Note: `backup.js` opens the DB with `fileMustExist: true`, so running
+> `just backup` on a dev host with no `data.sqlite` fails with `SQLITE_CANTOPEN`.
+> That's expected — the real backup runs on the server, where the DB lives.
 
 ## Run
 
@@ -71,16 +102,44 @@ override with `PORT=1234 npm start`. The systemd unit pins `PORT=3001`.
 
 ### Run as a systemd service (Linux / Raspberry Pi)
 
-`systemd/fitness-tracker.service` runs the app with `Restart=always`. Edit its
-`User`/`WorkingDirectory`/`node` path for your box, then:
+`systemd/fitness-tracker.service` runs the app with `Restart=always`. The unit
+files use `__USER__` / `__HOME__` placeholders; `just systemd-install`
+substitutes them from the account that runs it (`$USER` / `$HOME`), so no
+username is committed and the units work on any box.
+
+#### First-time setup — one command
+
+From your dev machine, push the code **and** the filled `.env`:
 
 ```bash
-just deploy            # rsync the tree to the `fitness-tracker` SSH alias
-# on the server:
-just systemd-install
+just deploy                                      # rsync tree (includes .env, excludes node_modules/DB)
+scp .env <user>@<server>:~/fitness-tracker/.env  # only if deploy didn't run from this repo root
+```
+
+Then on the server, a single command does everything — install deps, build the
+native `better-sqlite3` binary for the server's Node, install + enable both
+systemd units, and run a test backup:
+
+```bash
+cd ~/fitness-tracker
+just server-setup
+```
+
+It **fails fast if `.env` is missing or empty**, since that's the #1 reason
+backups silently stop. When it finishes you'll see the `Backup uploaded…` line.
+
+#### Individual steps (if you prefer)
+
+```bash
+npm install
+just systemd-install   # substitutes __USER__/__HOME__, copies units, daemon-reload
 just systemd-enable    # starts the app + the daily backup timer
 just systemd-status
 ```
+
+> `just systemd-install` reads the unit files from `~/fitness-tracker/systemd/`
+> on the server, so **`just deploy` (or scp) the updated units first** — otherwise
+> you'll install the old copy (and the placeholders won't match your box).
 
 ### Open the firewall (ufw)
 
@@ -145,6 +204,27 @@ Backups are JSON dumps of the whole database uploaded daily to S3.
 The IAM user can only `s3:PutObject` on `backups/fitness-tracker-*.json`. The bucket
 has versioning, encryption, public-access-block, and a lifecycle rule expiring
 backups after 90 days.
+
+**`AWS_REGION` must match the bucket's actual region** (see `just tofu-print-env`).
+If it's wrong or omitted, the S3 upload fails. `backup.js` defaults to
+`eu-central-1` when the var is unset, so an incomplete `.env` can point at the
+wrong region silently.
+
+**The backup service loads `.env` via `EnvironmentFile=`**
+(`systemd/fitness-tracker-backup.service`), so a missing or unreadable `.env` on
+the server makes every run fail and the daily backup stops silently. If backups
+go stale, check both the file and the last runs:
+
+```bash
+cat ~/fitness-tracker/.env                          # all 5 keys present?
+systemctl list-timers fitness-tracker-backup.timer  # enabled? next run?
+journalctl -u fitness-tracker-backup.service -n 50  # last run's error
+sudo systemctl start fitness-tracker-backup.service # run once now to test
+```
+
+> Because backup keys are dated (`fitness-tracker-<date>.json`), a gap in backups
+> can't be backfilled later — you only get snapshots from the days the job
+> actually ran.
 
 ## Restore / import
 

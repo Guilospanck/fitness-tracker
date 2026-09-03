@@ -5,7 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# Replace `youruser` (both lines) with the Linux account that owns the app.
-User=youruser
-WorkingDirectory=/home/youruser/fitness-tracker
+# __USER__ / __HOME__ are substituted by `just systemd-install` from the
+# account that runs it ($USER / $HOME). Don't hardcode a name here.
+User=__USER__
+WorkingDirectory=__HOME__/fitness-tracker
+# Load AWS creds explicitly instead of relying on backup.js's dotenv + cwd.
+# Without this, a missing/unreadable .env (or a wrong cwd) makes the backup
+# exit early and the timer silently stops producing backups.
+EnvironmentFile=__HOME__/fitness-tracker/.env
 ExecStart=/usr/bin/node backup.js
